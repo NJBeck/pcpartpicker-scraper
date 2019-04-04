@@ -1,7 +1,3 @@
-# script to scrape a particular section of pcpartpicker.com 
-# units that drop below a defined price will trigger an email
-# keywords can be used to disregard certain units
-# run periodicaly using a task manager
 
 # todo: 
 # work with multiples below price
