@@ -1,8 +1,7 @@
 
 # todo: 
-# work with multiples below price
 # add error handling on the rendering
-# generalize to other product sections
+# generalize to other product sections/motherboards types
 # exclude other properties such as vendors
 # check sites to make sure price has actually dropped
 # log data that is scraped to check for unusual deals
@@ -14,7 +13,7 @@ import smtplib
 import os
 from requests_html import HTMLSession
 # using requests_html because page uses javascript 
-#(first run will download/install chromium to render the javascript)
+# (first run will download/install chromium to render the javascript)
 
 pageURL = "https://pcpartpicker.com/products/motherboard/detailed-list/#c=128,135"
 # url for z370 and z390 motherboards
@@ -56,30 +55,45 @@ for price in pricematch:
 	else:
 		prices.append('N/A')
 
-urls = []
-for url in namematch:
-		urls.append(url.a.get('href'))
+# urls = []
+# for url in namematch:
+# 		urls.append(url.a.get('href'))
+# will probably use this eventually
 
-def emailAlert(name):
+pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
+# regex pattern for our exclusionary terms
+
+
+fullDict = {k: v for k, v in zip(names, prices)}
+cleanDict = {}
+for name in fullDict.keys():
+	if fullDict[name] != 'N/A':
+		cleanDict[name] = fullDict[name]
+# generate dict of all name: price where price isnt N/A
+
+alertDict = {}
+for name in cleanDict.keys():
+	if cleanDict[name] < triggerPrice:
+		if not re.search(pattern, name.lower()):
+			alertDict[name] = cleanDict[name]
+# generate dictionary of name: price which meets our criteria
+
+def emailAlert(alertDict):
 	with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
 		smtp.ehlo()
 		smtp.starttls()
 		smtp.ehlo()
 		smtp.login(sendingEmail, sendingPassword)
-
 		subject = 'motherboard price drop'
-		body = name + ' has dropped below $' + str(triggerPrice)
+
+		body = ''
+		for name in alertDict.keys():
+			body += name + ' is at $' + str(alertDict[name]) + '\n'
+
 		msg = f'Subject: {subject}\n\n{body}'
 
 		smtp.sendmail(sendingEmail, receivingEmail, msg)
 
 
-for price in prices:
-	if price != 'N/A' and price < triggerPrice:
-		name = names[prices.index(price)]
-		
-		pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
-
-		if not re.search(pattern, name.lower()):
-			emailAlert(name)
-		
+if alertDict:
+	emailAlert(alertDict)
