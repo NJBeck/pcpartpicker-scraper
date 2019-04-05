@@ -10,23 +10,24 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import smtplib
-import os
 from requests_html import HTMLSession
 # using requests_html because page uses javascript 
 # (first run will download/install chromium to render the javascript)
 
 pageURL = "https://pcpartpicker.com/products/motherboard/detailed-list/#c=128,135"
 # url for z370 and z390 motherboards
-triggerPrice = 110.0
+triggerPrice = 100
 # price which triggers an email if a matching unit price falls below
-excludedUnits = ['phantom gaming 4', 'mortar', 'ds3h', 'z370p d3', 'a pro']
+excludedUnits = []
 # some case insensitive unit-unique terms to exclude units I don't care about
+# example: 'pro4'
 
-sendingEmail = os.environ.get('USER_EMAIL')
-sendingPassword = os.environ.get('USER_PASSWORD')
-# email and password hidden in os environment variables
+sendingEmail = ''
+sendingPassword = ''
+# email and password of the account you want to send from
+# I suggest using app unique passwords hidden in environment variables
 
-receivingEmail = sendingEmail
+receivingEmail = ''
 # i use the same email to receive but it can of course be changed
 
 
