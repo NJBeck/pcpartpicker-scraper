@@ -114,6 +114,5 @@ for name in cleanDict.keys():
 		if not re.search(pattern, name.lower()):
 			alertDict[name] = cleanDict[name]
 
-
 if alertDict:
-	print(alertDict)
+	email_alert(alertDict)
