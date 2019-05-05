@@ -46,15 +46,15 @@ config.read('config.ini')
 
 # form the URL from the lookingFor config and the dictionaries
 lookingFor = config['price and terms']['lookingFor'].lower()
-if lookingFor == 'processor' or 'cpu':
+if lookingFor == 'cpu':
     unitSuffixes = cpuSuffixes
-    pageURL += 'cpu' + '/#s='
+    pageURL += 'cpu/#s='
 elif lookingFor == 'gpu':
     unitSuffixes = gpuSuffixes
-    pageURL += 'video-card' + '/#c='
+    pageURL += 'video-card/#c='
 else:
     unitSuffixes = moboSuffixes
-    pageURL += 'motherboard' + '/#c='
+    pageURL += 'motherboard/#c='
 
 chosenSuffixes = config['price and terms']['units'].split(', ')
 urlSuffixes = []
@@ -69,16 +69,16 @@ excludedUnits = config['price and terms']['excludedTerms'].split(', ')
 
 def email_alert(alertDict):
     '''logs in and sends and email with the info for the found units'''
-	with smtplib.SMTP('smtp.gmail.com', sendingPort) as smtp:
-		smtp.ehlo()
-		smtp.starttls()
-		smtp.ehlo()
-		smtp.login(sendingEmail, sendingPassword)
-		
+    with smtplib.SMTP('smtp.gmail.com', sendingPort) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(sendingEmail, sendingPassword)
+
         subject = 'motherboard price drop'
         body = ''
-		for name in alertDict.keys():
-			body += name + ' is at $' + str(alertDict[name]) + '\n'
+        for name in alertDict.keys():
+            body += name + ' is at $' + str(alertDict[name]) + '\n'
         msg = f'Subject: {subject}\n\n{body}'
         
         smtp.sendmail(sendingEmail, receivingEmail, msg)
@@ -92,35 +92,36 @@ source = r.html.html
 soup = BeautifulSoup(source, 'lxml')
 
 # names/prices tagged td and have classes tdname and tdprice respectively
-namematch = soup.find_all('td', class_='tdname')
+namematch = soup.find_all('td', class_='td__name')
 names = []
 for name in namematch:
-	names.append(name.a.text)
+    names.append(name.a.text)
 
-pricematch = soup.find_all('td', class_='tdprice')
+pricematch = soup.find_all('td', class_='td__price')
 prices = []
 for price in pricematch:
-	if price.text:
-		prices.append(float(price.text[1:]))
-	else:
-		prices.append('N/A')
+    if price.text:
+        prices.append(float(price.text[1:]))
+    else:
+        prices.append('N/A')
 
 # generate dict of all name: price where price isnt N/A
 fullDict = {k: v for k, v in zip(names, prices)}
 cleanDict = {}
 for name in fullDict.keys():
-	if fullDict[name] != 'N/A':
-		cleanDict[name] = fullDict[name]
+    if fullDict[name] != 'N/A':
+        cleanDict[name] = fullDict[name]
+
 
 # regex pattern for our exclusionary terms
 pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
 
-# generate dictionary of name: price which meets our criteria
+generate dictionary of name: price which meets our criteria
 alertDict = {}
 for name in cleanDict.keys():
-	if cleanDict[name] < triggerPrice:
-		if not re.search(pattern, name.lower()):
-			alertDict[name] = cleanDict[name]
+    if cleanDict[name] < triggerPrice:
+        if not re.search(pattern, name.lower()):
+            alertDict[name] = cleanDict[name]
 
 if alertDict:
-	email_alert(alertDict)
+    email_alert(alertDict)
