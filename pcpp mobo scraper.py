@@ -67,61 +67,80 @@ triggerPrice = float(config['price and terms']['triggerPrice'])
 
 excludedUnits = config['price and terms']['excludedTerms'].split(', ')
 
-def email_alert(alertDict):
-    '''logs in and sends and email with the info for the found units'''
-    with smtplib.SMTP('smtp.gmail.com', sendingPort) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.ehlo()
-        smtp.login(sendingEmail, sendingPassword)
+# next few if statements are grabbing email info from environment variables
+# if told to; otherwise, just take them straight from the config
+sendingEmail = ''
+if config['email info'].getboolean('usingEnvSendEmail'):
+    sendingEmail = os.environ.get(config['email info']['sendingEmail'])
+else: 
+    sendingEmail = config['email info']['sendingEmail']
 
-        subject = 'motherboard price drop'
-        body = ''
-        for name in alertDict.keys():
-            body += name + ' is at $' + str(alertDict[name]) + '\n'
-        msg = f'Subject: {subject}\n\n{body}'
+sendingPassword = ''
+if config['email info'].getboolean('usingEnvPassword'):
+    sendingPassword = os.environ.get(config['email info']['sendingPassword'])
+else: 
+    sendingPassword = config['email info']['sendingPassword']
+
+receivingEmail = config['email info']['receivingEmail']
+sendingPort = config['email info'].getint('sendingEmailPort')
+
+print(receivingEmail + sendingEmail + sendingPassword + pageURL + str(triggerPrice) + str(excludedUnits))
+
+# def email_alert(alertDict):
+#     '''logs in and sends and email with the info for the found units'''
+#     with smtplib.SMTP('smtp.gmail.com', sendingPort) as smtp:
+#         smtp.ehlo()
+#         smtp.starttls()
+#         smtp.ehlo()
+#         smtp.login(sendingEmail, sendingPassword)
+
+#         subject = 'motherboard price drop'
+#         body = ''
+#         for name in alertDict.keys():
+#             body += name + ' is at $' + str(alertDict[name]) + '\n'
+#         msg = f'Subject: {subject}\n\n{body}'
         
-        smtp.sendmail(sendingEmail, receivingEmail, msg)
+#         smtp.sendmail(sendingEmail, receivingEmail, msg)
 
-# get our html after javascript has finished rendering
-session = HTMLSession()
-r = session.get(pageURL)
-r.html.render()
-source = r.html.html
+# # get our html after javascript has finished rendering
+# session = HTMLSession()
+# r = session.get(pageURL)
+# r.html.render()
+# source = r.html.html
 
-soup = BeautifulSoup(source, 'lxml')
+# soup = BeautifulSoup(source, 'lxml')
 
-# names/prices tagged td and have classes tdname and tdprice respectively
-namematch = soup.find_all('td', class_='td__name')
-names = []
-for name in namematch:
-    names.append(name.a.text)
+# # names/prices tagged td and have classes tdname and tdprice respectively
+# namematch = soup.find_all('td', class_='td__name')
+# names = []
+# for name in namematch:
+#     names.append(name.a.text)
 
-pricematch = soup.find_all('td', class_='td__price')
-prices = []
-for price in pricematch:
-    if price.text:
-        prices.append(float(price.text[1:]))
-    else:
-        prices.append('N/A')
+# pricematch = soup.find_all('td', class_='td__price')
+# prices = []
+# for price in pricematch:
+#     if price.text:
+#         prices.append(float(price.text[1:]))
+#     else:
+#         prices.append('N/A')
 
-# generate dict of all name: price where price isnt N/A
-fullDict = {k: v for k, v in zip(names, prices)}
-cleanDict = {}
-for name in fullDict.keys():
-    if fullDict[name] != 'N/A':
-        cleanDict[name] = fullDict[name]
+# # generate dict of all name: price where price isnt N/A
+# fullDict = {k: v for k, v in zip(names, prices)}
+# cleanDict = {}
+# for name in fullDict.keys():
+#     if fullDict[name] != 'N/A':
+#         cleanDict[name] = fullDict[name]
 
 
-# regex pattern for our exclusionary terms
-pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
+# # regex pattern for our exclusionary terms
+# pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
 
-generate dictionary of name: price which meets our criteria
-alertDict = {}
-for name in cleanDict.keys():
-    if cleanDict[name] < triggerPrice:
-        if not re.search(pattern, name.lower()):
-            alertDict[name] = cleanDict[name]
+# # generate dictionary of name: price which meets our criteria
+# alertDict = {}
+# for name in cleanDict.keys():
+#     if cleanDict[name] < triggerPrice:
+#         if not re.search(pattern, name.lower()):
+#             alertDict[name] = cleanDict[name]
 
-if alertDict:
-    email_alert(alertDict)
+# if alertDict and config['email info']['sendEmail']:
+#     email_alert(alertDict)
