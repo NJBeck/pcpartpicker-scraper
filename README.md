@@ -7,3 +7,6 @@ Scrapes the motherboard, cpu, or gpu sections of pcpartpicker.com for selected u
 * Add unique terms to exclude units you don't want alerts about
 * Option to archive results to a mysql database
 * To be run periodically using a task scheduler
+
+Dependencies: Python 3.7+, requests-html, beautifulsoup4, mysql-connector-python
+    Or you can just use pipenv
