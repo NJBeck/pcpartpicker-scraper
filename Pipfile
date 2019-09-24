@@ -4,11 +4,14 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+pylint = "*"
 
 [packages]
 mysql-connector-python = "*"
 requests-html = "*"
 beautifulsoup4 = "*"
+websockets = "==6.0"
+asyncio = "*"
 
 [requires]
-python_version = "3.6"
+python_version = "3.7"
