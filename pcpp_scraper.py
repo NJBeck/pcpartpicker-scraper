@@ -13,9 +13,8 @@ import smtplib
 import os
 import configparser
 import mysql.connector
-from mysql.connector import Error
-from requests_html import AsyncHTMLSession
-import asyncio
+import requests_html
+import concurrent.futures
 # using requests_html because page uses javascript 
 # (first run will download/install chromium to render the javascript)
 
@@ -96,10 +95,11 @@ def scrape(source):
             prices.append(float(stripped))
 
     # generate dict of all name: price where price isnt null
-    cleanDict = {k: v for k, v in zip(names, prices)}
-    return cleanDict
+    priceDict = {k: v for k, v in zip(names, prices)}
+    return priceDict
 
 def mysql_log(priceDict):
+    '''for each item it creates a table of datetime: price'''
     try:
         mysql_config={'host': config['mysql database']['host'],
             'user':config['mysql database']['username'],
@@ -138,17 +138,48 @@ def mysql_log(priceDict):
                             'price DECIMAL(7, 2), PRIMARY KEY(date))'
                     mycursor.execute(query)
                 insert_price(name, price)
-            except Error as e:
+            except mysql.connector.Error as e:
                 print(e)
-
-        mydb.close()
         mycursor.close()
-    except Error as e:
+        mydb.close()
+        
+    except mysql.connector.Error as e:
         print(e)
 
-def email_alert(alertDict):
+def get_sending_email():
+    '''gets target email address from config or environment variables'''
+    if config['email info']['sendingEmail']:
+        sendingEmail = config['email info']['sendingEmail']
+    else: 
+        sendingEmail = os.environ.get('USER_EMAIL')
+    return sendingEmail
+
+def get_sending_pwd():
+    '''gets target password from config or environment variables'''
+    if config['email info']['sendingPassword']:
+        sendingPassword = config['email info']['sendingPassword']
+    else: 
+        sendingPassword = os.environ.get('EMAIL_PASSWORD')
+    return sendingPassword
+
+def alert_dict(priceDict):
+    '''generates the dictionary of items which meet the criteria of below the 
+    trigger price and dont match exclusion terms'''
+    # regex pattern for our exclusionary terms
+    excludedUnits = config['price and terms']['excludedTerms'].split(', ')
+    pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
+
+    alertDict = {}
+    triggerPrice = float(config['price and terms']['triggerPrice'])
+    for name in priceDict.keys():
+        if priceDict[name] < triggerPrice:
+            if not re.search(pattern, name.lower()):
+                alertDict[name] = priceDict[name]
+    return alertDict
+
+def email_alert(alertDict, sendingEmail, sendingPassword, receivingEmail, sendingPort, SMTPHost):
     '''logs in and sends and email with the info for the found units'''
-    with smtplib.SMTP('smtp.gmail.com', sendingPort) as smtp:
+    with smtplib.SMTP(SMTPHost, sendingPort) as smtp:
         smtp.ehlo()
         smtp.starttls()
         smtp.ehlo()
@@ -162,95 +193,56 @@ def email_alert(alertDict):
         
         smtp.sendmail(sendingEmail, receivingEmail, msg)
 
-# async def get_mobo():
-#     r = await asess.get(URLs[0])
-#     print('beginning mobo await render')
-#     await r.html.arender(timeout=10, sleep=5)
-#     print('finish mobo render await')
-#     return r
+def email():
+    if config['email info']['sendEmail']:
+        receivingEmail = config['email info']['receivingEmail']
 
-# async def get_cpu():
-#     r = await asess.get(URLs[1])
-#     print('beginning cpu await render')
-#     await r.html.arender(timeout=10, sleep=5)
-#     print('finish cpu render await')
-#     return r
+        if config['email info']['sendingPort']:
+            sendingPort = config['email info'].getint('sendingEmailPort')
+        else: 
+            sendingPort = 587
+        if config['email info']['SMTPHost']:
+            SMTPHost = config['email info']['SMTPHost']
+        else:
+            SMTPHost = 'smtp.gmail.com'
+        
+        sendingEmail = get_sending_email()
 
-# async def get_gpu():
-#     r = await asess.get(URLs[2])
-#     print('beginning gpu await render')
-#     await r.html.arender(timeout=10, sleep=5)
-#     print('finish gpu render await')
-#     return r
+        sendingPwd = get_sending_pwd()
 
-URLs = form_urls()
-print('scraping ' + ', '.join(URLs))
+        alertDict = alert_dict(priceDicts)
+        if alertDict:
+            email_alert(alertDict, sendingEmail, sendingPwd, receivingEmail, sendingPort, SMTPHost)
 
-asession = AsyncHTMLSession()
-
-async def get_render(asession, url):
-    r = await asession.get(url)
-    print('awaiting asession')
-    print('beginning await render')
-    await r.html.arender(timeout=10, sleep=5)
+def get_render(url):
+    session = requests_html.HTMLSession()
+    r = session.get(url)
+    r.html.render(timeout=10, sleep=5)
     return r.html
 
-async def main():
-    
-    await get_render(asession, URLs[0])
-    await get_render(asession, URLs[1])
-    await get_render(asession, URLs[2])
+def render_all (urls):
+    with concurrent.futures.ProcessPoolExecutor() as exec:
+        results = exec.map(get_render, URLs)
+        return results
 
-results = asession.run(main())
+if __name__ == '__main__':
+    URLs = form_urls()
+    print('scraping ' + ', '.join(URLs))
 
-priceDicts = []
-for result in results:
-    priceDicts.append(scrape(result))
-print(priceDicts)
+    renderResults = render_all(URLs)
 
+    priceDicts = {}
+    for result in renderResults:
+        priceDict = scrape(result)
+        priceDicts.update(priceDict)
+    print(priceDicts)
 
-#do mysql database logging if enabled
-if config['mysql database']['database name']:
-    for priceDict in priceDicts:
-        mysql_log(priceDict)
-else:
-    print('no mysql database')
+    if config['mysql database']['database name']:
+            mysql_log(priceDict)
+    else:
+        print('no mysql database')
 
-if config['email info']['sendEmail']:
-    # regex pattern for our exclusionary terms
-    excludedUnits = config['price and terms']['excludedTerms'].split(', ')
-    pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
+    email()
 
-    # next few if statements are grabbing email info from environment variables
-    # if told to; otherwise, just take them straight from the config
-    sendingEmail = ''
-    if config['email info'].getboolean('usingEnvSendEmail'):
-        sendingEmail = os.environ.get(config['email info']['sendingEmail'])
-    else: 
-        sendingEmail = config['email info']['sendingEmail']
-
-    sendingPassword = ''
-    if config['email info'].getboolean('usingEnvPassword'):
-        sendingPassword = os.environ.get(config['email info']['sendingPassword'])
-    else: 
-        sendingPassword = config['email info']['sendingPassword']
-
-    receivingEmail = config['email info']['receivingEmail']
-    sendingPort = config['email info'].getint('sendingEmailPort')
-
-    def alert_dict(priceDict):
-        alertDict = {}
-        triggerPrice = float(config['price and terms']['triggerPrice'])
-        for name in priceDict.keys():
-            if priceDict[name] < triggerPrice:
-                if not re.search(pattern, name.lower()):
-                    alertDict[name] = priceDict[name]
-
-    alertDict = {}
-    for priceDict in priceDicts:
-        alertDict.update(alert_dict(priceDict))
-
-    if alertDict:
-        email_alert(alertDict)
 
 
