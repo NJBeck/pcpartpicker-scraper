@@ -15,6 +15,8 @@ import configparser
 import mysql.connector
 import requests_html
 import concurrent.futures
+import asyncio
+import pyppeteer
 # using requests_html because page uses javascript 
 # (first run will download/install chromium to render the javascript)
 
@@ -64,20 +66,19 @@ def form_urls():
         elif term in gpuSuffixes.keys():
             gpuURLsuffixes.append(gpuSuffixes[term])
     if moboURLsuffixes:
-        moboURL = pageURL + 'motherboard/#c=' + ','.join(moboURLsuffixes) + '&sort=price'
+        moboURL = pageURL + 'motherboard/#c=' + ','.join(moboURLsuffixes) + '&xcx=0&sort=price'
         URLs.append(moboURL)
     if cpuURLsuffixes:
-        cpuURL = pageURL + 'cpu/#s=' + ','.join(cpuURLsuffixes) + '&sort=price'
+        cpuURL = pageURL + 'cpu/#s=' + ','.join(cpuURLsuffixes) + '&xcx=0&sort=price'
         URLs.append(cpuURL)
     if gpuURLsuffixes:
-        gpuURL = pageURL + 'video-card/#c=' + ','.join(gpuURLsuffixes) + '&sort=price'
+        gpuURL = pageURL + 'video-card/#c=' + ','.join(gpuURLsuffixes) + '&xcx=0&sort=price'
         URLs.append(gpuURL)
     return URLs
 
 def scrape(source):
     '''return a dictionary of name: price from the URL given'''
-    s = source.html
-    soup = BeautifulSoup(s, 'lxml')
+    soup = BeautifulSoup(source, 'lxml')
 
     # names/prices have classes td__nameWrapper and td__price respectively
     namematch = soup.find_all(class_='td__nameWrapper')
@@ -169,8 +170,12 @@ def alert_dict(priceDict):
     excludedUnits = config['price and terms']['excludedTerms'].split(', ')
     pattern = "(" + ")|(".join(excludedUnits).lower() + ")"
 
+    
+    if config['price and terms']['triggerPrice']:
+        triggerPrice = float(config['price and terms']['triggerPrice'])
+    else: triggerPrice = 0.0
+
     alertDict = {}
-    triggerPrice = float(config['price and terms']['triggerPrice'])
     for name in priceDict.keys():
         if priceDict[name] < triggerPrice:
             if not re.search(pattern, name.lower()):
@@ -193,7 +198,7 @@ def email_alert(alertDict, sendingEmail, sendingPassword, receivingEmail, sendin
         
         smtp.sendmail(sendingEmail, receivingEmail, msg)
 
-def email():
+def email(prices):
     if config['email info']['sendEmail']:
         receivingEmail = config['email info']['receivingEmail']
 
@@ -210,26 +215,44 @@ def email():
 
         sendingPwd = get_sending_pwd()
 
-        alertDict = alert_dict(priceDicts)
+        alertDict = alert_dict(prices)
         if alertDict:
             email_alert(alertDict, sendingEmail, sendingPwd, receivingEmail, sendingPort, SMTPHost)
 
-def get_render(url):
-    session = requests_html.HTMLSession()
-    r = session.get(url)
-    r.html.render(timeout=10, sleep=5)
-    return r.html
 
-def render_all (urls):
-    with concurrent.futures.ProcessPoolExecutor() as exec:
-        results = exec.map(get_render, URLs)
-        return results
+async def render(url):
+    browser = await pyppeteer.launch()
+    page = await browser.newPage()
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36')
+    try:
+        await page.goto(url, waitUntil= 'load', timeout=100000)
+        print('attempting to render '+ url)
+        # await page.waitForSelector('td.td__name')
+        content = await page.content()
+        # title = await page.title()
+        # title += '.html'
+        # with open(title, 'w+') as f:
+        #     f.write(content)
+        await browser.close()
+    except browser.Error as e:
+        print(e)
+        content = ''
+    finally:
+        return content
+
+async def main(urls):
+    tasks = []
+    for url in urls:
+        tasks.append(render(url))
+    return await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
     URLs = form_urls()
     print('scraping ' + ', '.join(URLs))
 
-    renderResults = render_all(URLs)
+    loop = asyncio.get_event_loop()
+    renderResults = loop.run_until_complete(main(URLs))
+    loop.close()
 
     priceDicts = {}
     for result in renderResults:
@@ -242,7 +265,7 @@ if __name__ == '__main__':
     else:
         print('no mysql database')
 
-    email()
+    email(priceDicts)
 
 
 
