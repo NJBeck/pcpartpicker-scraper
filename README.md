@@ -8,5 +8,5 @@ Scrapes the motherboard, cpu, or gpu sections of pcpartpicker.com for selected u
 * Option to archive results to a mysql database
 * To be run periodically using a task scheduler
 
-Dependencies: Python 3.7+, requests-html, beautifulsoup4, mysql-connector-python
+Dependencies: Python 3.7+, pyppeteer, beautifulsoup4, mysql-connector-python
     Or you can just use pipenv

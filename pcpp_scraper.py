@@ -1,10 +1,11 @@
 
 # todo: 
-# add parallelization for scraping multiple pages
+# get the asyncronous rendering to work in headless
 # add more specific search terms particularly for cpu/gpu
 # exclude other properties such as vendors
 # check sites to make sure price has actually dropped
 # use database to check for historic deals/trends
+
 
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -13,8 +14,6 @@ import smtplib
 import os
 import configparser
 import mysql.connector
-import requests_html
-import concurrent.futures
 import asyncio
 import pyppeteer
 # using requests_html because page uses javascript 
@@ -80,18 +79,29 @@ def scrape(source):
     '''return a dictionary of name: price from the URL given'''
     soup = BeautifulSoup(source, 'lxml')
 
+    # to include type of video card in the name
+    title = soup.title.string.lower()
+    specs = []
+    if 'video card' in title:
+        specmatch = soup.find_all(class_='td__spec td__spec--1')
+        for spec in specmatch:
+            specs.append(spec.contents[1] + ' ')
+
     # names/prices have classes td__nameWrapper and td__price respectively
     namematch = soup.find_all(class_='td__nameWrapper')
     names = []
-    for name in namematch:
-        item_name = name.text[:-4].strip()
-        names.append(item_name)
+    for num, name in enumerate(namematch):
+        # for some reason the name.text ends with a number in parentheses
+        item_name = re.sub(r'\((\d*)\)$','',name.text.strip()).strip()
+        if specs:
+            names.append(specs[num] + item_name)
+        else: names.append(item_name)
 
     pricematch = soup.find_all(class_='td__price')
     prices = []
     for price in pricematch:
         #strip any non numerals from price
-        stripped = re.sub('[^0-9\.]','', price.text)
+        stripped = re.sub(r'[^0-9\.]','', price.text)
         if stripped:
             prices.append(float(stripped))
 
@@ -149,18 +159,18 @@ def mysql_log(priceDict):
 
 def get_sending_email():
     '''gets target email address from config or environment variables'''
-    if config['email info']['sendingEmail']:
-        sendingEmail = config['email info']['sendingEmail']
-    else: 
+    if config['email info']['sendingEmail'] == 'USER_EMAIL':
         sendingEmail = os.environ.get('USER_EMAIL')
+    else: 
+        sendingEmail = config['email info']['sendingEmail']
     return sendingEmail
 
 def get_sending_pwd():
     '''gets target password from config or environment variables'''
-    if config['email info']['sendingPassword']:
-        sendingPassword = config['email info']['sendingPassword']
-    else: 
+    if config['email info']['sendingPassword'] == 'EMAIL_PASSWORD':
         sendingPassword = os.environ.get('EMAIL_PASSWORD')
+    else: 
+        sendingPassword = config['email info']['sendingPassword']
     return sendingPassword
 
 def alert_dict(priceDict):
@@ -190,7 +200,7 @@ def email_alert(alertDict, sendingEmail, sendingPassword, receivingEmail, sendin
         smtp.ehlo()
         smtp.login(sendingEmail, sendingPassword)
 
-        subject = 'motherboard price drop'
+        subject = 'unit price drops'
         body = ''
         for name in alertDict.keys():
             body += name + ' is at $' + str(alertDict[name]) + '\n'
@@ -198,7 +208,7 @@ def email_alert(alertDict, sendingEmail, sendingPassword, receivingEmail, sendin
         
         smtp.sendmail(sendingEmail, receivingEmail, msg)
 
-def email(prices):
+def send_email(prices):
     if config['email info']['sendEmail']:
         receivingEmail = config['email info']['receivingEmail']
 
@@ -221,24 +231,15 @@ def email(prices):
 
 
 async def render(url):
-    browser = await pyppeteer.launch()
+
+    browser = await pyppeteer.launch(autoClose=False, headless=False)
     page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36')
-    try:
-        await page.goto(url, waitUntil= 'load', timeout=100000)
-        print('attempting to render '+ url)
-        # await page.waitForSelector('td.td__name')
-        content = await page.content()
-        # title = await page.title()
-        # title += '.html'
-        # with open(title, 'w+') as f:
-        #     f.write(content)
-        await browser.close()
-    except browser.Error as e:
-        print(e)
-        content = ''
-    finally:
-        return content
+    await page.goto(url, timeout=100000, waitUntil='networkidle0')
+    await page.waitForSelector('.td__nameWrapper')
+    content = await page.content()
+    await browser.close()
+    return content 
 
 async def main(urls):
     tasks = []
@@ -258,14 +259,13 @@ if __name__ == '__main__':
     for result in renderResults:
         priceDict = scrape(result)
         priceDicts.update(priceDict)
-    print(priceDicts)
 
     if config['mysql database']['database name']:
-            mysql_log(priceDict)
+            mysql_log(priceDicts)
     else:
         print('no mysql database')
 
-    email(priceDicts)
+    send_email(priceDicts)
 
 
 
